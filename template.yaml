@@ -1,0 +1,137 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Transform: AWS::Serverless-2016-10-31
+Description: |
+  money-potato
+  Sample SAM Template for money-potato
+Globals:
+  Function:
+    Timeout: 3
+Resources:
+  Api:
+    Type: AWS::Serverless::Api
+    Properties:
+      Name: !Sub
+        - ${ResourceName} From Stack ${AWS::StackName}
+        - ResourceName: Api
+      StageName: Prod
+      DefinitionBody:
+        openapi: '3.0'
+        info: {}
+        paths:
+          /GetTimeDespost:
+            get:
+              x-amazon-apigateway-integration:
+                httpMethod: POST
+                type: aws_proxy
+                uri: !Sub arn:${AWS::Partition}:apigateway:${AWS::Region}:lambda:path/2015-03-31/functions/${GetTimeDespost.Arn}/invocations
+              responses: {}
+      EndpointConfiguration: REGIONAL
+      TracingEnabled: true
+      Cors:
+        MaxAge: 5
+  TimeDeposit:
+    Type: AWS::DynamoDB::Table
+    Properties:
+      AttributeDefinitions:
+        - AttributeName: id
+          AttributeType: S
+        - AttributeName: timestamp
+          AttributeType: 'N'
+      BillingMode: PAY_PER_REQUEST
+      KeySchema:
+        - AttributeName: id
+          KeyType: HASH
+        - AttributeName: timestamp
+          KeyType: RANGE
+      StreamSpecification:
+        StreamViewType: NEW_AND_OLD_IMAGES
+  GrapTimeDespostFromHSBC:
+    Type: AWS::Serverless::Function
+    Properties:
+      CodeUri: src/function/
+      Handler: index.GrapTimeDepositFromHSBC
+      Runtime: nodejs18.x
+      MemorySize: 1024
+      Timeout: 30
+      Environment:
+        Variables:
+          TIMEDEPOSIT_TABLE_NAME: !Ref TimeDeposit
+          TIMEDEPOSIT_TABLE_ARN: !GetAtt TimeDeposit.Arn
+      Policies:
+        - DynamoDBCrudPolicy:
+            TableName: !Ref TimeDeposit
+  GetTimeDespost:
+    Type: AWS::Serverless::Function
+    Properties:
+      Description: !Sub
+        - Stack ${AWS::StackName} Function ${ResourceName}
+        - ResourceName: GetTimeDespost
+      CodeUri: src/function/
+      Handler: index.GetTimeDispost
+      Runtime: nodejs18.x
+      MemorySize: 1024
+      Timeout: 30
+      Tracing: Active
+      Environment:
+        Variables:
+          TIMEDEPOSIT_TABLE_NAME: !Ref TimeDeposit
+          TIMEDEPOSIT_TABLE_ARN: !GetAtt TimeDeposit.Arn
+      Policies:
+        - DynamoDBCrudPolicy:
+            TableName: !Ref TimeDeposit
+      Events:
+        ApiGETGetTimeDespost:
+          Type: Api
+          Properties:
+            Path: /GetTimeDespost
+            Method: GET
+            RestApiId: !Ref Api
+  GetTimeDespostLogGroup:
+    Type: AWS::Logs::LogGroup
+    DeletionPolicy: Retain
+    Properties:
+      LogGroupName: !Sub /aws/lambda/${GetTimeDespost}
+  MidnightTrigger:
+    Type: AWS::Scheduler::Schedule
+    Properties:
+      ScheduleExpression: cron(0 1 * * ? *)
+      FlexibleTimeWindow:
+        Mode: FLEXIBLE
+        MaximumWindowInMinutes: 15
+      ScheduleExpressionTimezone: Asia/HongKong
+      Target:
+        Arn: !GetAtt GrapTimeDespostFromHSBC.Arn
+        RoleArn: !GetAtt MidnightTriggerToGrapTimeDespostFromHSBCRole.Arn
+  MidnightTriggerToGrapTimeDespostFromHSBCRole:
+    Type: AWS::IAM::Role
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          Effect: Allow
+          Principal:
+            Service: !Sub scheduler.${AWS::URLSuffix}
+          Action: sts:AssumeRole
+          Condition:
+            ArnLike:
+              aws:SourceArn: !Sub
+                - arn:${AWS::Partition}:scheduler:${AWS::Region}:${AWS::AccountId}:schedule/*/${AWS::StackName}-${ResourceId}-*
+                - ResourceId: MidnightTrigger
+      Policies:
+        - PolicyName: StartExecutionPolicy
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              - Effect: Allow
+                Action: lambda:InvokeFunction
+                Resource: !GetAtt GrapTimeDespostFromHSBC.Arn
+Outputs:
+  HelloWorldApi:
+    Description: API Gateway endpoint URL for Prod stage for Hello World function
+    Value: !Sub https://${ServerlessRestApi}.execute-api.${AWS::Region}.amazonaws.com/Prod/hello/
+  HelloWorldFunction:
+    Description: Hello World Lambda Function ARN
+    Value: !GetAtt GrapTimeDespostFromHSBC.Arn
+  HelloWorldFunctionIamRole:
+    Description: Implicit IAM Role created for Hello World function
+    Value: !GetAtt HelloWorldFunctionRole.Arn

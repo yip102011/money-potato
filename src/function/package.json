@@ -1,0 +1,10 @@
+{
+  "name": "function",
+  "version": "1.0.0",
+  "type": "module",
+  "dependencies": {
+    "@aws-sdk/client-dynamodb": "^3.476.0",
+    "axios": "^1.6.2",
+    "cheerio": "^1.0.0-rc.12"
+  }
+}
